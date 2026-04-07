@@ -1,0 +1,14 @@
+var count = 10;
+var name = "alice";
+if count >= 10 then
+{
+    print(name);
+}
+while count < 15 do
+{
+    count = count + 1;
+    print("count\tvalue");
+}
+begin
+read(count);
+end

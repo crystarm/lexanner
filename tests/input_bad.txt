@@ -1,0 +1,9 @@
+var valid = 1;
+very_long_identifier_name_over_32_chars_here = 2;
+name = "bad\qescape";
+x = .5;
+y = 10.;
+z = 1..2;
+oops$ = 7;
+text = "unclosed string
+/* unclosed comment
