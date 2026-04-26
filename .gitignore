@@ -1,1 +1,7 @@
 .devnotes/
+
+
+lexanner
+parser.tab.c
+parser.tab.h
+scanner.yy.c
