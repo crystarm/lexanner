@@ -552,7 +552,18 @@ static int current_col = 1;
 static int token_index = 0;
 static int token_line = 1;
 static int token_col = 1;
-static int table_header_printed = 0;
+
+typedef struct {
+    int number;
+    int line;
+    char *lexeme;
+    char *type_name;
+    char *value;
+} token_row_t;
+
+static token_row_t *table_rows = NULL;
+static size_t table_rows_count = 0;
+static size_t table_rows_cap = 0;
 
 static int comment_start_line = 1;
 static int comment_start_col = 1;
@@ -606,23 +617,202 @@ static void print_escaped(FILE *out, const char *s) {
     }
 }
 
-static void ensure_table_header(void) {
-    if (!table_header_printed) {
-        printf("number | line | lexeme | type | value\n");
-        table_header_printed = 1;
+static char *dup_plain(const char *s) {
+    size_t len = 0;
+    char *out = NULL;
+
+    if (s == NULL) {
+        s = "";
     }
+
+    len = strlen(s);
+    out = (char *)malloc(len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    memcpy(out, s, len + 1);
+    return out;
+}
+
+static char hex_digit(unsigned int v) {
+    if (v < 10U) {
+        return (char)('0' + v);
+    }
+    return (char)('A' + (v - 10U));
+}
+
+static char *dup_escaped(const char *s) {
+    size_t in_len = 0;
+    size_t cap = 0;
+    size_t i = 0;
+    size_t j = 0;
+    char *out = NULL;
+
+    if (s == NULL) {
+        s = "";
+    }
+
+    in_len = strlen(s);
+    cap = in_len * 4 + 1;
+    out = (char *)malloc(cap);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    while (i < in_len) {
+        unsigned char c = (unsigned char)s[i];
+
+        if (c == '\n') {
+            out[j++] = '\\';
+            out[j++] = 'n';
+        } else if (c == '\t') {
+            out[j++] = '\\';
+            out[j++] = 't';
+        } else if (c == '\r') {
+            out[j++] = '\\';
+            out[j++] = 'r';
+        } else if (c == '\\') {
+            out[j++] = '\\';
+            out[j++] = '\\';
+        } else if (c == '"') {
+            out[j++] = '\\';
+            out[j++] = '"';
+        } else if (c < 32 || c == 127) {
+            out[j++] = '\\';
+            out[j++] = 'x';
+            out[j++] = hex_digit((unsigned int)((c >> 4) & 0x0F));
+            out[j++] = hex_digit((unsigned int)(c & 0x0F));
+        } else {
+            out[j++] = (char)c;
+        }
+
+        i += 1;
+    }
+
+    out[j] = '\0';
+    return out;
+}
+
+static int push_token_row(token_row_t row) {
+    token_row_t *new_rows = NULL;
+    size_t new_cap = 0;
+
+    if (table_rows_count == table_rows_cap) {
+        new_cap = (table_rows_cap == 0) ? 64 : (table_rows_cap * 2);
+        new_rows = (token_row_t *)realloc(table_rows, new_cap * sizeof(token_row_t));
+        if (new_rows == NULL) {
+            return 0;
+        }
+        table_rows = new_rows;
+        table_rows_cap = new_cap;
+    }
+
+    table_rows[table_rows_count] = row;
+    table_rows_count += 1;
+    return 1;
+}
+
+static void flush_token_table(void) {
+    size_t i = 0;
+    size_t w_number = strlen("number");
+    size_t w_line = strlen("line");
+    size_t w_lexeme = strlen("lexeme");
+    size_t w_type = strlen("type");
+    size_t w_value = strlen("value");
+
+    if (table_rows_count == 0) {
+        return;
+    }
+
+    for (i = 0; i < table_rows_count; i += 1) {
+        char number_buf[32];
+        char line_buf[32];
+        int number_len = snprintf(number_buf, sizeof(number_buf), "%d", table_rows[i].number);
+        int line_len = snprintf(line_buf, sizeof(line_buf), "%d", table_rows[i].line);
+        size_t lexeme_len = strlen(table_rows[i].lexeme);
+        size_t type_len = strlen(table_rows[i].type_name);
+        size_t value_len = strlen(table_rows[i].value);
+
+        if (number_len > 0 && (size_t)number_len > w_number) {
+            w_number = (size_t)number_len;
+        }
+        if (line_len > 0 && (size_t)line_len > w_line) {
+            w_line = (size_t)line_len;
+        }
+        if (lexeme_len > w_lexeme) {
+            w_lexeme = lexeme_len;
+        }
+        if (type_len > w_type) {
+            w_type = type_len;
+        }
+        if (value_len > w_value) {
+            w_value = value_len;
+        }
+    }
+
+    printf("%-*s | %-*s | %-*s | %-*s | %-*s\n",
+           (int)w_number, "number",
+           (int)w_line, "line",
+           (int)w_lexeme, "lexeme",
+           (int)w_type, "type",
+           (int)w_value, "value");
+
+    for (i = 0; i < table_rows_count; i += 1) {
+        char number_buf[32];
+        char line_buf[32];
+
+        snprintf(number_buf, sizeof(number_buf), "%d", table_rows[i].number);
+        snprintf(line_buf, sizeof(line_buf), "%d", table_rows[i].line);
+
+        printf("%-*s | %-*s | %-*s | %-*s | %-*s\n",
+               (int)w_number, number_buf,
+               (int)w_line, line_buf,
+               (int)w_lexeme, table_rows[i].lexeme,
+               (int)w_type, table_rows[i].type_name,
+               (int)w_value, table_rows[i].value);
+
+        free(table_rows[i].lexeme);
+        free(table_rows[i].type_name);
+        free(table_rows[i].value);
+    }
+
+    free(table_rows);
+    table_rows = NULL;
+    table_rows_count = 0;
+    table_rows_cap = 0;
 }
 
 static void emit_token_row(const char *lexeme, const char *type_name, const char *value) {
-    ensure_table_header();
+    token_row_t row;
+    char *lexeme_esc = NULL;
+    char *type_copy = NULL;
+    char *value_esc = NULL;
+
     token_index += 1;
-    printf("%d | %d | ", token_index, token_line);
-    print_escaped(stdout, lexeme);
-    printf(" | %s | ", type_name);
-    if (value != NULL) {
-        print_escaped(stdout, value);
+
+    lexeme_esc = dup_escaped(lexeme);
+    type_copy = dup_plain(type_name);
+    value_esc = dup_escaped(value);
+
+    if (lexeme_esc == NULL || type_copy == NULL || value_esc == NULL) {
+        free(lexeme_esc);
+        free(type_copy);
+        free(value_esc);
+        return;
     }
-    printf("\n");
+
+    row.number = token_index;
+    row.line = token_line;
+    row.lexeme = lexeme_esc;
+    row.type_name = type_copy;
+    row.value = value_esc;
+
+    if (!push_token_row(row)) {
+        free(lexeme_esc);
+        free(type_copy);
+        free(value_esc);
+    }
 }
 
 static void emit_lex_error_at(int line, int col, const char *message, const char *fragment) {
@@ -663,8 +853,8 @@ static void append_char(char *buf, int *len, int cap, char ch) {
         buf[*len] = '\0';
     }
 }
-#line 667 "scanner.yy.c"
-#line 668 "scanner.yy.c"
+#line 857 "scanner.yy.c"
+#line 858 "scanner.yy.c"
 
 #define INITIAL 0
 #define cmt 1
@@ -881,9 +1071,9 @@ YY_DECL
 		}
 
 	{
-#line 138 "scanner.l"
+#line 328 "scanner.l"
 
-#line 887 "scanner.yy.c"
+#line 1077 "scanner.yy.c"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -942,7 +1132,7 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 139 "scanner.l"
+#line 329 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
@@ -950,28 +1140,28 @@ YY_RULE_SETUP
 case 2:
 /* rule 2 can match eol */
 YY_RULE_SETUP
-#line 143 "scanner.l"
+#line 333 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 147 "scanner.l"
+#line 337 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 151 "scanner.l"
+#line 341 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 155 "scanner.l"
+#line 345 "scanner.l"
 {
     mark_token_start();
     comment_start_line = token_line;
@@ -982,7 +1172,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 163 "scanner.l"
+#line 353 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
     BEGIN(INITIAL);
@@ -991,28 +1181,29 @@ YY_RULE_SETUP
 case 7:
 /* rule 7 can match eol */
 YY_RULE_SETUP
-#line 168 "scanner.l"
+#line 358 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 172 "scanner.l"
+#line 362 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case YY_STATE_EOF(cmt):
-#line 176 "scanner.l"
+#line 366 "scanner.l"
 {
     emit_lex_error_at(comment_start_line, comment_start_col, "unclosed multiline comment", "/*");
+    flush_token_table();
     return 0;
 }
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 181 "scanner.l"
+#line 372 "scanner.l"
 {
     mark_token_start();
     string_start_line = token_line;
@@ -1025,7 +1216,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 191 "scanner.l"
+#line 382 "scanner.l"
 {
     append_buf(string_lexeme, &string_lexeme_len, (int)sizeof(string_lexeme), yytext, yyleng);
     append_buf(string_value, &string_value_len, (int)sizeof(string_value), yytext, yyleng);
@@ -1034,7 +1225,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 197 "scanner.l"
+#line 388 "scanner.l"
 {
     append_buf(string_lexeme, &string_lexeme_len, (int)sizeof(string_lexeme), yytext, yyleng);
     if (yytext[1] == 'n') {
@@ -1051,7 +1242,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 211 "scanner.l"
+#line 402 "scanner.l"
 {
     append_buf(string_lexeme, &string_lexeme_len, (int)sizeof(string_lexeme), yytext, yyleng);
     advance_position_text(yytext, yyleng);
@@ -1061,7 +1252,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 218 "scanner.l"
+#line 409 "scanner.l"
 {
     append_buf(string_lexeme, &string_lexeme_len, (int)sizeof(string_lexeme), yytext, yyleng);
     advance_position_text(yytext, yyleng);
@@ -1078,7 +1269,7 @@ YY_RULE_SETUP
 case 14:
 /* rule 14 can match eol */
 YY_RULE_SETUP
-#line 231 "scanner.l"
+#line 422 "scanner.l"
 {
     emit_lex_error_at(string_start_line, string_start_col, "unclosed string literal", string_lexeme);
     advance_position_text(yytext, yyleng);
@@ -1086,15 +1277,16 @@ YY_RULE_SETUP
 }
 	YY_BREAK
 case YY_STATE_EOF(str):
-#line 237 "scanner.l"
+#line 428 "scanner.l"
 {
     emit_lex_error_at(string_start_line, string_start_col, "unclosed string literal", string_lexeme);
+    flush_token_table();
     return 0;
 }
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 242 "scanner.l"
+#line 434 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1104,7 +1296,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 249 "scanner.l"
+#line 441 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1114,7 +1306,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 256 "scanner.l"
+#line 448 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1124,7 +1316,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 263 "scanner.l"
+#line 455 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1134,7 +1326,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 270 "scanner.l"
+#line 462 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1144,7 +1336,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 277 "scanner.l"
+#line 469 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1154,7 +1346,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 284 "scanner.l"
+#line 476 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1164,7 +1356,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 291 "scanner.l"
+#line 483 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1174,7 +1366,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 298 "scanner.l"
+#line 490 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1184,7 +1376,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 305 "scanner.l"
+#line 497 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1194,7 +1386,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 312 "scanner.l"
+#line 504 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1204,7 +1396,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 319 "scanner.l"
+#line 511 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1214,7 +1406,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 27:
 YY_RULE_SETUP
-#line 326 "scanner.l"
+#line 518 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1224,7 +1416,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 333 "scanner.l"
+#line 525 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1234,7 +1426,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 340 "scanner.l"
+#line 532 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1244,7 +1436,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 30:
 YY_RULE_SETUP
-#line 347 "scanner.l"
+#line 539 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1254,7 +1446,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 31:
 YY_RULE_SETUP
-#line 354 "scanner.l"
+#line 546 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1264,7 +1456,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 32:
 YY_RULE_SETUP
-#line 361 "scanner.l"
+#line 553 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1274,7 +1466,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 33:
 YY_RULE_SETUP
-#line 368 "scanner.l"
+#line 560 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1284,7 +1476,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 34:
 YY_RULE_SETUP
-#line 375 "scanner.l"
+#line 567 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1294,7 +1486,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 35:
 YY_RULE_SETUP
-#line 382 "scanner.l"
+#line 574 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1304,7 +1496,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 36:
 YY_RULE_SETUP
-#line 389 "scanner.l"
+#line 581 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1314,7 +1506,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 37:
 YY_RULE_SETUP
-#line 396 "scanner.l"
+#line 588 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1324,7 +1516,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 38:
 YY_RULE_SETUP
-#line 403 "scanner.l"
+#line 595 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1333,7 +1525,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 409 "scanner.l"
+#line 601 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1342,7 +1534,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 40:
 YY_RULE_SETUP
-#line 415 "scanner.l"
+#line 607 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1351,7 +1543,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 41:
 YY_RULE_SETUP
-#line 421 "scanner.l"
+#line 613 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1361,7 +1553,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 42:
 YY_RULE_SETUP
-#line 428 "scanner.l"
+#line 620 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1371,7 +1563,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 43:
 YY_RULE_SETUP
-#line 435 "scanner.l"
+#line 627 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1384,7 +1576,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 44:
 YY_RULE_SETUP
-#line 445 "scanner.l"
+#line 637 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1394,7 +1586,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 45:
 YY_RULE_SETUP
-#line 452 "scanner.l"
+#line 644 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1404,7 +1596,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 46:
 YY_RULE_SETUP
-#line 459 "scanner.l"
+#line 651 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1414,7 +1606,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 47:
 YY_RULE_SETUP
-#line 466 "scanner.l"
+#line 658 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1424,7 +1616,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 48:
 YY_RULE_SETUP
-#line 473 "scanner.l"
+#line 665 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1434,7 +1626,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 49:
 YY_RULE_SETUP
-#line 480 "scanner.l"
+#line 672 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1444,7 +1636,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 50:
 YY_RULE_SETUP
-#line 487 "scanner.l"
+#line 679 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1454,7 +1646,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 51:
 YY_RULE_SETUP
-#line 494 "scanner.l"
+#line 686 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1464,7 +1656,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 52:
 YY_RULE_SETUP
-#line 501 "scanner.l"
+#line 693 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1474,7 +1666,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 53:
 YY_RULE_SETUP
-#line 508 "scanner.l"
+#line 700 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1484,7 +1676,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 54:
 YY_RULE_SETUP
-#line 515 "scanner.l"
+#line 707 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1494,7 +1686,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 55:
 YY_RULE_SETUP
-#line 522 "scanner.l"
+#line 714 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1504,7 +1696,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 56:
 YY_RULE_SETUP
-#line 529 "scanner.l"
+#line 721 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1514,7 +1706,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 57:
 YY_RULE_SETUP
-#line 536 "scanner.l"
+#line 728 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1524,7 +1716,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 58:
 YY_RULE_SETUP
-#line 543 "scanner.l"
+#line 735 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1534,7 +1726,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 59:
 YY_RULE_SETUP
-#line 550 "scanner.l"
+#line 742 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1544,7 +1736,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 60:
 YY_RULE_SETUP
-#line 557 "scanner.l"
+#line 749 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1554,7 +1746,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 61:
 YY_RULE_SETUP
-#line 564 "scanner.l"
+#line 756 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1564,7 +1756,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 62:
 YY_RULE_SETUP
-#line 571 "scanner.l"
+#line 763 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1574,7 +1766,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 63:
 YY_RULE_SETUP
-#line 578 "scanner.l"
+#line 770 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1584,7 +1776,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 64:
 YY_RULE_SETUP
-#line 585 "scanner.l"
+#line 777 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1594,7 +1786,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 65:
 YY_RULE_SETUP
-#line 592 "scanner.l"
+#line 784 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1604,7 +1796,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 66:
 YY_RULE_SETUP
-#line 599 "scanner.l"
+#line 791 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1614,7 +1806,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 67:
 YY_RULE_SETUP
-#line 606 "scanner.l"
+#line 798 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1624,7 +1816,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 68:
 YY_RULE_SETUP
-#line 613 "scanner.l"
+#line 805 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1634,7 +1826,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 69:
 YY_RULE_SETUP
-#line 620 "scanner.l"
+#line 812 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1644,7 +1836,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 70:
 YY_RULE_SETUP
-#line 627 "scanner.l"
+#line 819 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1652,17 +1844,18 @@ YY_RULE_SETUP
 }
 	YY_BREAK
 case YY_STATE_EOF(INITIAL):
-#line 633 "scanner.l"
+#line 825 "scanner.l"
 {
+    flush_token_table();
     return 0;
 }
 	YY_BREAK
 case 71:
 YY_RULE_SETUP
-#line 636 "scanner.l"
+#line 829 "scanner.l"
 ECHO;
 	YY_BREAK
-#line 1666 "scanner.yy.c"
+#line 1859 "scanner.yy.c"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2628,6 +2821,6 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 636 "scanner.l"
+#line 829 "scanner.l"
 
 

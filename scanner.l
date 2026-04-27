@@ -16,7 +16,18 @@ static int current_col = 1;
 static int token_index = 0;
 static int token_line = 1;
 static int token_col = 1;
-static int table_header_printed = 0;
+
+typedef struct {
+    int number;
+    int line;
+    char *lexeme;
+    char *type_name;
+    char *value;
+} token_row_t;
+
+static token_row_t *table_rows = NULL;
+static size_t table_rows_count = 0;
+static size_t table_rows_cap = 0;
 
 static int comment_start_line = 1;
 static int comment_start_col = 1;
@@ -70,23 +81,202 @@ static void print_escaped(FILE *out, const char *s) {
     }
 }
 
-static void ensure_table_header(void) {
-    if (!table_header_printed) {
-        printf("number | line | lexeme | type | value\n");
-        table_header_printed = 1;
+static char *dup_plain(const char *s) {
+    size_t len = 0;
+    char *out = NULL;
+
+    if (s == NULL) {
+        s = "";
     }
+
+    len = strlen(s);
+    out = (char *)malloc(len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    memcpy(out, s, len + 1);
+    return out;
+}
+
+static char hex_digit(unsigned int v) {
+    if (v < 10U) {
+        return (char)('0' + v);
+    }
+    return (char)('A' + (v - 10U));
+}
+
+static char *dup_escaped(const char *s) {
+    size_t in_len = 0;
+    size_t cap = 0;
+    size_t i = 0;
+    size_t j = 0;
+    char *out = NULL;
+
+    if (s == NULL) {
+        s = "";
+    }
+
+    in_len = strlen(s);
+    cap = in_len * 4 + 1;
+    out = (char *)malloc(cap);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    while (i < in_len) {
+        unsigned char c = (unsigned char)s[i];
+
+        if (c == '\n') {
+            out[j++] = '\\';
+            out[j++] = 'n';
+        } else if (c == '\t') {
+            out[j++] = '\\';
+            out[j++] = 't';
+        } else if (c == '\r') {
+            out[j++] = '\\';
+            out[j++] = 'r';
+        } else if (c == '\\') {
+            out[j++] = '\\';
+            out[j++] = '\\';
+        } else if (c == '"') {
+            out[j++] = '\\';
+            out[j++] = '"';
+        } else if (c < 32 || c == 127) {
+            out[j++] = '\\';
+            out[j++] = 'x';
+            out[j++] = hex_digit((unsigned int)((c >> 4) & 0x0F));
+            out[j++] = hex_digit((unsigned int)(c & 0x0F));
+        } else {
+            out[j++] = (char)c;
+        }
+
+        i += 1;
+    }
+
+    out[j] = '\0';
+    return out;
+}
+
+static int push_token_row(token_row_t row) {
+    token_row_t *new_rows = NULL;
+    size_t new_cap = 0;
+
+    if (table_rows_count == table_rows_cap) {
+        new_cap = (table_rows_cap == 0) ? 64 : (table_rows_cap * 2);
+        new_rows = (token_row_t *)realloc(table_rows, new_cap * sizeof(token_row_t));
+        if (new_rows == NULL) {
+            return 0;
+        }
+        table_rows = new_rows;
+        table_rows_cap = new_cap;
+    }
+
+    table_rows[table_rows_count] = row;
+    table_rows_count += 1;
+    return 1;
+}
+
+static void flush_token_table(void) {
+    size_t i = 0;
+    size_t w_number = strlen("number");
+    size_t w_line = strlen("line");
+    size_t w_lexeme = strlen("lexeme");
+    size_t w_type = strlen("type");
+    size_t w_value = strlen("value");
+
+    if (table_rows_count == 0) {
+        return;
+    }
+
+    for (i = 0; i < table_rows_count; i += 1) {
+        char number_buf[32];
+        char line_buf[32];
+        int number_len = snprintf(number_buf, sizeof(number_buf), "%d", table_rows[i].number);
+        int line_len = snprintf(line_buf, sizeof(line_buf), "%d", table_rows[i].line);
+        size_t lexeme_len = strlen(table_rows[i].lexeme);
+        size_t type_len = strlen(table_rows[i].type_name);
+        size_t value_len = strlen(table_rows[i].value);
+
+        if (number_len > 0 && (size_t)number_len > w_number) {
+            w_number = (size_t)number_len;
+        }
+        if (line_len > 0 && (size_t)line_len > w_line) {
+            w_line = (size_t)line_len;
+        }
+        if (lexeme_len > w_lexeme) {
+            w_lexeme = lexeme_len;
+        }
+        if (type_len > w_type) {
+            w_type = type_len;
+        }
+        if (value_len > w_value) {
+            w_value = value_len;
+        }
+    }
+
+    printf("%-*s | %-*s | %-*s | %-*s | %-*s\n",
+           (int)w_number, "number",
+           (int)w_line, "line",
+           (int)w_lexeme, "lexeme",
+           (int)w_type, "type",
+           (int)w_value, "value");
+
+    for (i = 0; i < table_rows_count; i += 1) {
+        char number_buf[32];
+        char line_buf[32];
+
+        snprintf(number_buf, sizeof(number_buf), "%d", table_rows[i].number);
+        snprintf(line_buf, sizeof(line_buf), "%d", table_rows[i].line);
+
+        printf("%-*s | %-*s | %-*s | %-*s | %-*s\n",
+               (int)w_number, number_buf,
+               (int)w_line, line_buf,
+               (int)w_lexeme, table_rows[i].lexeme,
+               (int)w_type, table_rows[i].type_name,
+               (int)w_value, table_rows[i].value);
+
+        free(table_rows[i].lexeme);
+        free(table_rows[i].type_name);
+        free(table_rows[i].value);
+    }
+
+    free(table_rows);
+    table_rows = NULL;
+    table_rows_count = 0;
+    table_rows_cap = 0;
 }
 
 static void emit_token_row(const char *lexeme, const char *type_name, const char *value) {
-    ensure_table_header();
+    token_row_t row;
+    char *lexeme_esc = NULL;
+    char *type_copy = NULL;
+    char *value_esc = NULL;
+
     token_index += 1;
-    printf("%d | %d | ", token_index, token_line);
-    print_escaped(stdout, lexeme);
-    printf(" | %s | ", type_name);
-    if (value != NULL) {
-        print_escaped(stdout, value);
+
+    lexeme_esc = dup_escaped(lexeme);
+    type_copy = dup_plain(type_name);
+    value_esc = dup_escaped(value);
+
+    if (lexeme_esc == NULL || type_copy == NULL || value_esc == NULL) {
+        free(lexeme_esc);
+        free(type_copy);
+        free(value_esc);
+        return;
     }
-    printf("\n");
+
+    row.number = token_index;
+    row.line = token_line;
+    row.lexeme = lexeme_esc;
+    row.type_name = type_copy;
+    row.value = value_esc;
+
+    if (!push_token_row(row)) {
+        free(lexeme_esc);
+        free(type_copy);
+        free(value_esc);
+    }
 }
 
 static void emit_lex_error_at(int line, int col, const char *message, const char *fragment) {
@@ -175,6 +365,7 @@ float_lit [0-9]+"."[0-9]+
 
 <cmt><<EOF>> {
     emit_lex_error_at(comment_start_line, comment_start_col, "unclosed multiline comment", "/*");
+    flush_token_table();
     return 0;
 }
 
@@ -236,6 +427,7 @@ float_lit [0-9]+"."[0-9]+
 
 <str><<EOF>> {
     emit_lex_error_at(string_start_line, string_start_col, "unclosed string literal", string_lexeme);
+    flush_token_table();
     return 0;
 }
 
@@ -631,6 +823,7 @@ float_lit [0-9]+"."[0-9]+
 }
 
 <<EOF>> {
+    flush_token_table();
     return 0;
 }
 %%
