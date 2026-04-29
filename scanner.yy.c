@@ -571,6 +571,8 @@ static int comment_start_col = 1;
 static int string_start_line = 1;
 static int string_start_col = 1;
 
+static int lex_error_count = 0;
+
 static char string_lexeme[8192];
 static char string_value[8192];
 static int string_lexeme_len = 0;
@@ -816,6 +818,7 @@ static void emit_token_row(const char *lexeme, const char *type_name, const char
 }
 
 static void emit_lex_error_at(int line, int col, const char *message, const char *fragment) {
+    lex_error_count += 1;
     fprintf(stderr, "lexical_error %d:%d: %s", line, col, message);
     if (fragment != NULL && fragment[0] != '\0') {
         fprintf(stderr, " [");
@@ -853,8 +856,12 @@ static void append_char(char *buf, int *len, int cap, char ch) {
         buf[*len] = '\0';
     }
 }
-#line 857 "scanner.yy.c"
-#line 858 "scanner.yy.c"
+
+int lexer_error_count(void) {
+    return lex_error_count;
+}
+#line 864 "scanner.yy.c"
+#line 865 "scanner.yy.c"
 
 #define INITIAL 0
 #define cmt 1
@@ -1071,9 +1078,9 @@ YY_DECL
 		}
 
 	{
-#line 328 "scanner.l"
+#line 335 "scanner.l"
 
-#line 1077 "scanner.yy.c"
+#line 1084 "scanner.yy.c"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1132,7 +1139,7 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 329 "scanner.l"
+#line 336 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
@@ -1140,28 +1147,28 @@ YY_RULE_SETUP
 case 2:
 /* rule 2 can match eol */
 YY_RULE_SETUP
-#line 333 "scanner.l"
+#line 340 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 337 "scanner.l"
+#line 344 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 341 "scanner.l"
+#line 348 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 345 "scanner.l"
+#line 352 "scanner.l"
 {
     mark_token_start();
     comment_start_line = token_line;
@@ -1172,7 +1179,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 353 "scanner.l"
+#line 360 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
     BEGIN(INITIAL);
@@ -1181,20 +1188,20 @@ YY_RULE_SETUP
 case 7:
 /* rule 7 can match eol */
 YY_RULE_SETUP
-#line 358 "scanner.l"
+#line 365 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 362 "scanner.l"
+#line 369 "scanner.l"
 {
     advance_position_text(yytext, yyleng);
 }
 	YY_BREAK
 case YY_STATE_EOF(cmt):
-#line 366 "scanner.l"
+#line 373 "scanner.l"
 {
     emit_lex_error_at(comment_start_line, comment_start_col, "unclosed multiline comment", "/*");
     flush_token_table();
@@ -1203,7 +1210,7 @@ case YY_STATE_EOF(cmt):
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 372 "scanner.l"
+#line 379 "scanner.l"
 {
     mark_token_start();
     string_start_line = token_line;
@@ -1216,7 +1223,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 382 "scanner.l"
+#line 389 "scanner.l"
 {
     append_buf(string_lexeme, &string_lexeme_len, (int)sizeof(string_lexeme), yytext, yyleng);
     append_buf(string_value, &string_value_len, (int)sizeof(string_value), yytext, yyleng);
@@ -1225,7 +1232,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 388 "scanner.l"
+#line 395 "scanner.l"
 {
     append_buf(string_lexeme, &string_lexeme_len, (int)sizeof(string_lexeme), yytext, yyleng);
     if (yytext[1] == 'n') {
@@ -1242,7 +1249,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 402 "scanner.l"
+#line 409 "scanner.l"
 {
     append_buf(string_lexeme, &string_lexeme_len, (int)sizeof(string_lexeme), yytext, yyleng);
     advance_position_text(yytext, yyleng);
@@ -1252,7 +1259,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 409 "scanner.l"
+#line 416 "scanner.l"
 {
     append_buf(string_lexeme, &string_lexeme_len, (int)sizeof(string_lexeme), yytext, yyleng);
     advance_position_text(yytext, yyleng);
@@ -1262,6 +1269,7 @@ YY_RULE_SETUP
     token_line = string_start_line;
     token_col = string_start_col;
     emit_token_row(string_lexeme, "STRING_LITERAL", string_value);
+    yylval.text = dup_plain(string_value);
     BEGIN(INITIAL);
     return STRING_LITERAL;
 }
@@ -1269,7 +1277,7 @@ YY_RULE_SETUP
 case 14:
 /* rule 14 can match eol */
 YY_RULE_SETUP
-#line 422 "scanner.l"
+#line 430 "scanner.l"
 {
     emit_lex_error_at(string_start_line, string_start_col, "unclosed string literal", string_lexeme);
     advance_position_text(yytext, yyleng);
@@ -1277,7 +1285,7 @@ YY_RULE_SETUP
 }
 	YY_BREAK
 case YY_STATE_EOF(str):
-#line 428 "scanner.l"
+#line 436 "scanner.l"
 {
     emit_lex_error_at(string_start_line, string_start_col, "unclosed string literal", string_lexeme);
     flush_token_table();
@@ -1286,7 +1294,7 @@ case YY_STATE_EOF(str):
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 434 "scanner.l"
+#line 442 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1296,7 +1304,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 441 "scanner.l"
+#line 449 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1306,7 +1314,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 448 "scanner.l"
+#line 456 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1316,7 +1324,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 455 "scanner.l"
+#line 463 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1326,7 +1334,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 462 "scanner.l"
+#line 470 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1336,7 +1344,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 469 "scanner.l"
+#line 477 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1346,7 +1354,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 476 "scanner.l"
+#line 484 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1356,7 +1364,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 483 "scanner.l"
+#line 491 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1366,7 +1374,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 490 "scanner.l"
+#line 498 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1376,7 +1384,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 497 "scanner.l"
+#line 505 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1386,7 +1394,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 504 "scanner.l"
+#line 512 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1396,7 +1404,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 511 "scanner.l"
+#line 519 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1406,7 +1414,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 27:
 YY_RULE_SETUP
-#line 518 "scanner.l"
+#line 526 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1416,7 +1424,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 525 "scanner.l"
+#line 533 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1426,7 +1434,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 532 "scanner.l"
+#line 540 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1436,7 +1444,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 30:
 YY_RULE_SETUP
-#line 539 "scanner.l"
+#line 547 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1446,7 +1454,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 31:
 YY_RULE_SETUP
-#line 546 "scanner.l"
+#line 554 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1456,7 +1464,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 32:
 YY_RULE_SETUP
-#line 553 "scanner.l"
+#line 561 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1466,27 +1474,29 @@ YY_RULE_SETUP
 	YY_BREAK
 case 33:
 YY_RULE_SETUP
-#line 560 "scanner.l"
+#line 568 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
     emit_token_row(yytext, "BOOL_LITERAL", "true");
+    yylval.text = dup_plain("true");
     return BOOL_LITERAL;
 }
 	YY_BREAK
 case 34:
 YY_RULE_SETUP
-#line 567 "scanner.l"
+#line 576 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
     emit_token_row(yytext, "BOOL_LITERAL", "false");
+    yylval.text = dup_plain("false");
     return BOOL_LITERAL;
 }
 	YY_BREAK
 case 35:
 YY_RULE_SETUP
-#line 574 "scanner.l"
+#line 584 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1496,7 +1506,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 36:
 YY_RULE_SETUP
-#line 581 "scanner.l"
+#line 591 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1506,7 +1516,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 37:
 YY_RULE_SETUP
-#line 588 "scanner.l"
+#line 598 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1516,7 +1526,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 38:
 YY_RULE_SETUP
-#line 595 "scanner.l"
+#line 605 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1525,7 +1535,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 601 "scanner.l"
+#line 611 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1534,7 +1544,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 40:
 YY_RULE_SETUP
-#line 607 "scanner.l"
+#line 617 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1543,27 +1553,29 @@ YY_RULE_SETUP
 	YY_BREAK
 case 41:
 YY_RULE_SETUP
-#line 613 "scanner.l"
+#line 623 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
     emit_token_row(yytext, "FLOAT_LITERAL", yytext);
+    yylval.text = dup_plain(yytext);
     return FLOAT_LITERAL;
 }
 	YY_BREAK
 case 42:
 YY_RULE_SETUP
-#line 620 "scanner.l"
+#line 631 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
     emit_token_row(yytext, "INT_LITERAL", yytext);
+    yylval.text = dup_plain(yytext);
     return INT_LITERAL;
 }
 	YY_BREAK
 case 43:
 YY_RULE_SETUP
-#line 627 "scanner.l"
+#line 639 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1571,12 +1583,13 @@ YY_RULE_SETUP
         emit_lex_error_here("identifier is longer than 32 characters", yytext);
     }
     emit_token_row(yytext, "IDENTIFIER", yytext);
+    yylval.text = dup_plain(yytext);
     return IDENTIFIER;
 }
 	YY_BREAK
 case 44:
 YY_RULE_SETUP
-#line 637 "scanner.l"
+#line 650 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1586,7 +1599,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 45:
 YY_RULE_SETUP
-#line 644 "scanner.l"
+#line 657 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1596,7 +1609,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 46:
 YY_RULE_SETUP
-#line 651 "scanner.l"
+#line 664 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1606,7 +1619,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 47:
 YY_RULE_SETUP
-#line 658 "scanner.l"
+#line 671 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1616,7 +1629,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 48:
 YY_RULE_SETUP
-#line 665 "scanner.l"
+#line 678 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1626,7 +1639,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 49:
 YY_RULE_SETUP
-#line 672 "scanner.l"
+#line 685 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1636,7 +1649,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 50:
 YY_RULE_SETUP
-#line 679 "scanner.l"
+#line 692 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1646,7 +1659,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 51:
 YY_RULE_SETUP
-#line 686 "scanner.l"
+#line 699 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1656,7 +1669,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 52:
 YY_RULE_SETUP
-#line 693 "scanner.l"
+#line 706 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1666,7 +1679,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 53:
 YY_RULE_SETUP
-#line 700 "scanner.l"
+#line 713 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1676,7 +1689,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 54:
 YY_RULE_SETUP
-#line 707 "scanner.l"
+#line 720 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1686,7 +1699,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 55:
 YY_RULE_SETUP
-#line 714 "scanner.l"
+#line 727 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1696,7 +1709,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 56:
 YY_RULE_SETUP
-#line 721 "scanner.l"
+#line 734 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1706,7 +1719,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 57:
 YY_RULE_SETUP
-#line 728 "scanner.l"
+#line 741 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1716,7 +1729,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 58:
 YY_RULE_SETUP
-#line 735 "scanner.l"
+#line 748 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1726,7 +1739,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 59:
 YY_RULE_SETUP
-#line 742 "scanner.l"
+#line 755 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1736,7 +1749,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 60:
 YY_RULE_SETUP
-#line 749 "scanner.l"
+#line 762 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1746,7 +1759,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 61:
 YY_RULE_SETUP
-#line 756 "scanner.l"
+#line 769 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1756,7 +1769,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 62:
 YY_RULE_SETUP
-#line 763 "scanner.l"
+#line 776 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1766,7 +1779,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 63:
 YY_RULE_SETUP
-#line 770 "scanner.l"
+#line 783 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1776,7 +1789,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 64:
 YY_RULE_SETUP
-#line 777 "scanner.l"
+#line 790 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1786,7 +1799,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 65:
 YY_RULE_SETUP
-#line 784 "scanner.l"
+#line 797 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1796,7 +1809,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 66:
 YY_RULE_SETUP
-#line 791 "scanner.l"
+#line 804 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1806,7 +1819,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 67:
 YY_RULE_SETUP
-#line 798 "scanner.l"
+#line 811 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1816,7 +1829,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 68:
 YY_RULE_SETUP
-#line 805 "scanner.l"
+#line 818 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1826,7 +1839,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 69:
 YY_RULE_SETUP
-#line 812 "scanner.l"
+#line 825 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1836,7 +1849,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 70:
 YY_RULE_SETUP
-#line 819 "scanner.l"
+#line 832 "scanner.l"
 {
     mark_token_start();
     advance_position_text(yytext, yyleng);
@@ -1844,7 +1857,7 @@ YY_RULE_SETUP
 }
 	YY_BREAK
 case YY_STATE_EOF(INITIAL):
-#line 825 "scanner.l"
+#line 838 "scanner.l"
 {
     flush_token_table();
     return 0;
@@ -1852,10 +1865,10 @@ case YY_STATE_EOF(INITIAL):
 	YY_BREAK
 case 71:
 YY_RULE_SETUP
-#line 829 "scanner.l"
+#line 842 "scanner.l"
 ECHO;
 	YY_BREAK
-#line 1859 "scanner.yy.c"
+#line 1872 "scanner.yy.c"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2821,6 +2834,6 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 829 "scanner.l"
+#line 842 "scanner.l"
 
 

@@ -35,6 +35,8 @@ static int comment_start_col = 1;
 static int string_start_line = 1;
 static int string_start_col = 1;
 
+static int lex_error_count = 0;
+
 static char string_lexeme[8192];
 static char string_value[8192];
 static int string_lexeme_len = 0;
@@ -280,6 +282,7 @@ static void emit_token_row(const char *lexeme, const char *type_name, const char
 }
 
 static void emit_lex_error_at(int line, int col, const char *message, const char *fragment) {
+    lex_error_count += 1;
     fprintf(stderr, "lexical_error %d:%d: %s", line, col, message);
     if (fragment != NULL && fragment[0] != '\0') {
         fprintf(stderr, " [");
@@ -316,6 +319,10 @@ static void append_char(char *buf, int *len, int cap, char ch) {
         *len += 1;
         buf[*len] = '\0';
     }
+}
+
+int lexer_error_count(void) {
+    return lex_error_count;
 }
 %}
 
@@ -415,6 +422,7 @@ float_lit [0-9]+"."[0-9]+
     token_line = string_start_line;
     token_col = string_start_col;
     emit_token_row(string_lexeme, "STRING_LITERAL", string_value);
+    yylval.text = dup_plain(string_value);
     BEGIN(INITIAL);
     return STRING_LITERAL;
 }
@@ -561,6 +569,7 @@ float_lit [0-9]+"."[0-9]+
     mark_token_start();
     advance_position_text(yytext, yyleng);
     emit_token_row(yytext, "BOOL_LITERAL", "true");
+    yylval.text = dup_plain("true");
     return BOOL_LITERAL;
 }
 
@@ -568,6 +577,7 @@ float_lit [0-9]+"."[0-9]+
     mark_token_start();
     advance_position_text(yytext, yyleng);
     emit_token_row(yytext, "BOOL_LITERAL", "false");
+    yylval.text = dup_plain("false");
     return BOOL_LITERAL;
 }
 
@@ -614,6 +624,7 @@ float_lit [0-9]+"."[0-9]+
     mark_token_start();
     advance_position_text(yytext, yyleng);
     emit_token_row(yytext, "FLOAT_LITERAL", yytext);
+    yylval.text = dup_plain(yytext);
     return FLOAT_LITERAL;
 }
 
@@ -621,6 +632,7 @@ float_lit [0-9]+"."[0-9]+
     mark_token_start();
     advance_position_text(yytext, yyleng);
     emit_token_row(yytext, "INT_LITERAL", yytext);
+    yylval.text = dup_plain(yytext);
     return INT_LITERAL;
 }
 
@@ -631,6 +643,7 @@ float_lit [0-9]+"."[0-9]+
         emit_lex_error_here("identifier is longer than 32 characters", yytext);
     }
     emit_token_row(yytext, "IDENTIFIER", yytext);
+    yylval.text = dup_plain(yytext);
     return IDENTIFIER;
 }
 

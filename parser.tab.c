@@ -71,11 +71,159 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 int yylex(void);
 void yyerror(const char *msg);
+int lexer_error_count(void);
 
-#line 79 "parser.tab.c"
+typedef struct node {
+    char *label;
+    struct node **children;
+    size_t child_count;
+} node_t;
+
+static node_t *root = NULL;
+static int syntax_error_count = 0;
+
+static char **derivation_steps = NULL;
+static size_t derivation_count = 0;
+static size_t derivation_cap = 0;
+
+static char *dup_text(const char *s) {
+    size_t len = 0;
+    char *out = NULL;
+
+    if (s == NULL) {
+        s = "";
+    }
+
+    len = strlen(s);
+    out = (char *)malloc(len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+
+    memcpy(out, s, len + 1);
+    return out;
+}
+
+static node_t *make_node_owned(char *label, size_t child_count, node_t **children) {
+    node_t *n = (node_t *)malloc(sizeof(node_t));
+    size_t i = 0;
+
+    if (n == NULL) {
+        free(label);
+        return NULL;
+    }
+
+    n->label = label;
+    n->child_count = child_count;
+    n->children = NULL;
+
+    if (child_count > 0) {
+        n->children = (node_t **)malloc(sizeof(node_t *) * child_count);
+        if (n->children == NULL) {
+            free(n->label);
+            free(n);
+            return NULL;
+        }
+
+        for (i = 0; i < child_count; i += 1) {
+            n->children[i] = children[i];
+        }
+    }
+
+    return n;
+}
+
+static node_t *make_node(const char *label, size_t child_count, node_t **children) {
+    return make_node_owned(dup_text(label), child_count, children);
+}
+
+static void free_tree(node_t *n) {
+    size_t i = 0;
+
+    if (n == NULL) {
+        return;
+    }
+
+    for (i = 0; i < n->child_count; i += 1) {
+        free_tree(n->children[i]);
+    }
+
+    free(n->children);
+    free(n->label);
+    free(n);
+}
+
+static void print_tree(const node_t *n, int depth) {
+    int i = 0;
+    size_t j = 0;
+
+    if (n == NULL) {
+        return;
+    }
+
+    for (i = 0; i < depth; i += 1) {
+        printf("  ");
+    }
+
+    printf("%s\n", n->label);
+
+    for (j = 0; j < n->child_count; j += 1) {
+        print_tree(n->children[j], depth + 1);
+    }
+}
+
+static void add_derivation_step(const char *step) {
+    char **new_buf = NULL;
+    size_t new_cap = 0;
+
+    if (derivation_count == derivation_cap) {
+        new_cap = (derivation_cap == 0) ? 32 : (derivation_cap * 2);
+        new_buf = (char **)realloc(derivation_steps, new_cap * sizeof(char *));
+        if (new_buf == NULL) {
+            return;
+        }
+        derivation_steps = new_buf;
+        derivation_cap = new_cap;
+    }
+
+    derivation_steps[derivation_count] = dup_text(step);
+    if (derivation_steps[derivation_count] == NULL) {
+        return;
+    }
+    derivation_count += 1;
+}
+
+static void print_derivation(void) {
+    size_t i = 0;
+
+    if (derivation_count == 0) {
+        return;
+    }
+
+    printf("\nDerivation chain (reductions):\n");
+    for (i = 0; i < derivation_count; i += 1) {
+        printf("%zu) %s\n", i + 1, derivation_steps[i]);
+    }
+}
+
+static void free_derivation(void) {
+    size_t i = 0;
+
+    for (i = 0; i < derivation_count; i += 1) {
+        free(derivation_steps[i]);
+    }
+
+    free(derivation_steps);
+    derivation_steps = NULL;
+    derivation_count = 0;
+    derivation_cap = 0;
+}
+
+#line 227 "parser.tab.c"
 
 # ifndef YY_CAST
 #  ifdef __cplusplus
@@ -157,8 +305,11 @@ enum yysymbol_kind_t
   YYSYMBOL_RBRACKET = 51,                  /* RBRACKET  */
   YYSYMBOL_YYACCEPT = 52,                  /* $accept  */
   YYSYMBOL_program = 53,                   /* program  */
-  YYSYMBOL_token_list = 54,                /* token_list  */
-  YYSYMBOL_token_item = 55                 /* token_item  */
+  YYSYMBOL_sentence = 54,                  /* sentence  */
+  YYSYMBOL_stmt = 55,                      /* stmt  */
+  YYSYMBOL_expr = 56,                      /* expr  */
+  YYSYMBOL_term = 57,                      /* term  */
+  YYSYMBOL_factor = 58                     /* factor  */
 };
 typedef enum yysymbol_kind_t yysymbol_kind_t;
 
@@ -484,18 +635,18 @@ union yyalloc
 #endif /* !YYCOPY_NEEDED */
 
 /* YYFINAL -- State number of the termination state.  */
-#define YYFINAL  3
+#define YYFINAL  10
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   49
+#define YYLAST   37
 
 /* YYNTOKENS -- Number of terminals.  */
 #define YYNTOKENS  52
 /* YYNNTS -- Number of nonterminals.  */
-#define YYNNTS  4
+#define YYNNTS  7
 /* YYNRULES -- Number of rules.  */
-#define YYNRULES  53
+#define YYNRULES  19
 /* YYNSTATES -- Number of states.  */
-#define YYNSTATES  54
+#define YYNSTATES  39
 
 /* YYMAXUTOK -- Last valid token kind.  */
 #define YYMAXUTOK   306
@@ -547,14 +698,10 @@ static const yytype_int8 yytranslate[] =
 
 #if YYDEBUG
 /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
-static const yytype_int8 yyrline[] =
+static const yytype_int16 yyrline[] =
 {
-       0,    66,    66,    70,    71,    75,    76,    77,    78,    79,
-      80,    81,    82,    83,    84,    85,    86,    87,    88,    89,
-      90,    91,    92,    93,    94,    95,    96,    97,    98,    99,
-     100,   101,   102,   103,   104,   105,   106,   107,   108,   109,
-     110,   111,   112,   113,   114,   115,   116,   117,   118,   119,
-     120,   121,   122,   123
+       0,   230,   230,   239,   247,   263,   279,   287,   292,   297,
+     305,   310,   315,   320,   328,   333,   342,   351,   360,   369
 };
 #endif
 
@@ -578,7 +725,7 @@ static const char *const yytname[] =
   "COLON_ASSIGN", "PLUS", "MINUS", "MUL", "DIV", "MOD", "EQ", "NEQ", "LT",
   "GT", "LE", "GE", "LAND", "LOR", "LNOT", "SEMICOLON", "COMMA", "COLON",
   "DOT", "LPAREN", "RPAREN", "LBRACE", "RBRACE", "LBRACKET", "RBRACKET",
-  "$accept", "program", "token_list", "token_item", YY_NULLPTR
+  "$accept", "program", "sentence", "stmt", "expr", "term", "factor", YY_NULLPTR
 };
 
 static const char *
@@ -588,7 +735,7 @@ yysymbol_name (yysymbol_kind_t yysymbol)
 }
 #endif
 
-#define YYPACT_NINF (-4)
+#define YYPACT_NINF (-40)
 
 #define yypact_value_is_default(Yyn) \
   ((Yyn) == YYPACT_NINF)
@@ -602,12 +749,10 @@ yysymbol_name (yysymbol_kind_t yysymbol)
    STATE-NUM.  */
 static const yytype_int8 yypact[] =
 {
-      -4,    49,    -3,    -4,    -4,    -4,    -4,    -4,    -4,    -4,
-      -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,
-      -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,
-      -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,
-      -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,    -4,
-      -4,    -4,    -4,    -4
+       0,   -39,   -11,   -10,    21,   -40,   -40,   -21,     3,   -21,
+     -40,   -40,   -40,   -40,   -40,   -40,   -21,   -23,   -12,   -40,
+     -21,   -16,   -20,   -21,   -21,    -5,   -21,   -21,   -21,   -14,
+     -40,   -40,   -12,   -12,   -40,   -40,   -40,   -40,   -40
 };
 
 /* YYDEFACT[STATE-NUM] -- Default reduction number in state STATE-NUM.
@@ -615,24 +760,22 @@ static const yytype_int8 yypact[] =
    means the default is an error.  */
 static const yytype_int8 yydefact[] =
 {
-       3,     0,     2,     1,     5,     6,     7,     8,     9,    10,
-      11,    12,    13,    14,    15,    16,    17,    18,    19,    20,
-      21,    22,    23,    24,    25,    26,    27,    28,    29,    30,
-      31,    32,    33,    34,    35,    36,    37,    38,    39,    40,
-      41,    42,    43,    44,    45,    46,    47,    48,    49,    50,
-      51,    52,    53,     4
+       0,     0,     0,     0,     0,     2,     3,     0,     0,     0,
+       1,    19,    15,    16,    17,    18,     0,     0,     9,    13,
+       0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
+       5,    14,     7,     8,     6,    10,    11,    12,     4
 };
 
 /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int8 yypgoto[] =
 {
-      -4,    -4,    -4,    -4
+     -40,   -40,   -40,   -40,    14,    12,     5
 };
 
 /* YYDEFGOTO[NTERM-NUM].  */
 static const yytype_int8 yydefgoto[] =
 {
-       0,     1,     2,    53
+       0,     4,     5,     6,    17,    18,    19
 };
 
 /* YYTABLE[YYPACT[STATE-NUM]] -- What to do in state STATE-NUM.  If
@@ -640,54 +783,42 @@ static const yytype_int8 yydefgoto[] =
    number is the opposite.  If YYTABLE_NINF, syntax error.  */
 static const yytype_int8 yytable[] =
 {
-       4,     5,     6,     7,     8,     9,    10,    11,    12,    13,
-      14,    15,    16,    17,    18,    19,    20,    21,    22,    23,
-      24,    25,    26,    27,    28,    29,    30,    31,    32,    33,
-      34,    35,    36,    37,    38,    39,    40,    41,    42,    43,
-      44,    45,    46,    47,    48,    49,    50,    51,    52,     3
+      11,    12,    13,    14,    15,    23,    24,     7,    23,    24,
+       1,     8,    23,    24,    23,    24,     9,     2,    26,    27,
+      28,    10,     3,    21,    25,    16,    30,    31,    38,    20,
+      22,    35,    36,    37,    29,    32,    33,    34
 };
 
 static const yytype_int8 yycheck[] =
 {
-       3,     4,     5,     6,     7,     8,     9,    10,    11,    12,
-      13,    14,    15,    16,    17,    18,    19,    20,    21,    22,
-      23,    24,    25,    26,    27,    28,    29,    30,    31,    32,
-      33,    34,    35,    36,    37,    38,    39,    40,    41,    42,
-      43,    44,    45,    46,    47,    48,    49,    50,    51,     0
+      21,    22,    23,    24,    25,    28,    29,    46,    28,    29,
+      10,    22,    28,    29,    28,    29,    26,    17,    30,    31,
+      32,     0,    22,     9,    47,    46,    42,    47,    42,    26,
+      16,    26,    27,    28,    20,    23,    24,    42
 };
 
 /* YYSTOS[STATE-NUM] -- The symbol kind of the accessing symbol of
    state STATE-NUM.  */
 static const yytype_int8 yystos[] =
 {
-       0,    53,    54,     0,     3,     4,     5,     6,     7,     8,
-       9,    10,    11,    12,    13,    14,    15,    16,    17,    18,
-      19,    20,    21,    22,    23,    24,    25,    26,    27,    28,
-      29,    30,    31,    32,    33,    34,    35,    36,    37,    38,
-      39,    40,    41,    42,    43,    44,    45,    46,    47,    48,
-      49,    50,    51,    55
+       0,    10,    17,    22,    53,    54,    55,    46,    22,    26,
+       0,    21,    22,    23,    24,    25,    46,    56,    57,    58,
+      26,    56,    56,    28,    29,    47,    30,    31,    32,    56,
+      42,    47,    57,    57,    42,    58,    58,    58,    42
 };
 
 /* YYR1[RULE-NUM] -- Symbol kind of the left-hand side of rule RULE-NUM.  */
 static const yytype_int8 yyr1[] =
 {
-       0,    52,    53,    54,    54,    55,    55,    55,    55,    55,
-      55,    55,    55,    55,    55,    55,    55,    55,    55,    55,
-      55,    55,    55,    55,    55,    55,    55,    55,    55,    55,
-      55,    55,    55,    55,    55,    55,    55,    55,    55,    55,
-      55,    55,    55,    55,    55,    55,    55,    55,    55,    55,
-      55,    55,    55,    55
+       0,    52,    53,    54,    55,    55,    55,    56,    56,    56,
+      57,    57,    57,    57,    58,    58,    58,    58,    58,    58
 };
 
 /* YYR2[RULE-NUM] -- Number of symbols on the right-hand side of rule RULE-NUM.  */
 static const yytype_int8 yyr2[] =
 {
-       0,     2,     1,     0,     2,     1,     1,     1,     1,     1,
-       1,     1,     1,     1,     1,     1,     1,     1,     1,     1,
-       1,     1,     1,     1,     1,     1,     1,     1,     1,     1,
-       1,     1,     1,     1,     1,     1,     1,     1,     1,     1,
-       1,     1,     1,     1,     1,     1,     1,     1,     1,     1,
-       1,     1,     1,     1
+       0,     2,     1,     1,     5,     4,     5,     3,     3,     1,
+       3,     3,     3,     1,     3,     1,     1,     1,     1,     1
 };
 
 
@@ -1155,7 +1286,41 @@ yydestruct (const char *yymsg,
   YY_SYMBOL_PRINT (yymsg, yykind, yyvaluep, yylocationp);
 
   YY_IGNORE_MAYBE_UNINITIALIZED_BEGIN
-  YY_USE (yykind);
+  switch (yykind)
+    {
+    case YYSYMBOL_BOOL_LITERAL: /* BOOL_LITERAL  */
+#line 220 "parser.y"
+            { free(((*yyvaluep).text)); }
+#line 1295 "parser.tab.c"
+        break;
+
+    case YYSYMBOL_IDENTIFIER: /* IDENTIFIER  */
+#line 220 "parser.y"
+            { free(((*yyvaluep).text)); }
+#line 1301 "parser.tab.c"
+        break;
+
+    case YYSYMBOL_INT_LITERAL: /* INT_LITERAL  */
+#line 220 "parser.y"
+            { free(((*yyvaluep).text)); }
+#line 1307 "parser.tab.c"
+        break;
+
+    case YYSYMBOL_FLOAT_LITERAL: /* FLOAT_LITERAL  */
+#line 220 "parser.y"
+            { free(((*yyvaluep).text)); }
+#line 1313 "parser.tab.c"
+        break;
+
+    case YYSYMBOL_STRING_LITERAL: /* STRING_LITERAL  */
+#line 220 "parser.y"
+            { free(((*yyvaluep).text)); }
+#line 1319 "parser.tab.c"
+        break;
+
+      default:
+        break;
+    }
   YY_IGNORE_MAYBE_UNINITIALIZED_END
 }
 
@@ -1420,8 +1585,231 @@ yyreduce:
   YY_REDUCE_PRINT (yyn);
   switch (yyn)
     {
+  case 2: /* program: sentence  */
+#line 230 "parser.y"
+             {
+        node_t *kids[1] = { (yyvsp[0].node) };
+        root = make_node("Program", 1, kids);
+        (yyval.node) = root;
+        add_derivation_step("program -> sentence");
+    }
+#line 1597 "parser.tab.c"
+    break;
 
-#line 1425 "parser.tab.c"
+  case 3: /* sentence: stmt  */
+#line 239 "parser.y"
+         {
+        node_t *kids[1] = { (yyvsp[0].node) };
+        (yyval.node) = make_node("Sentence", 1, kids);
+        add_derivation_step("sentence -> stmt");
+    }
+#line 1607 "parser.tab.c"
+    break;
+
+  case 4: /* stmt: KW_VAR IDENTIFIER ASSIGN expr SEMICOLON  */
+#line 247 "parser.y"
+                                            {
+        node_t *id_leaf = NULL;
+        node_t *kids[2];
+
+        char *id_label = (char *)malloc(strlen("id: ") + strlen((yyvsp[-3].text)) + 1);
+        if (id_label != NULL) {
+            sprintf(id_label, "id: %s", (yyvsp[-3].text));
+        }
+        id_leaf = make_node_owned(id_label, 0, NULL);
+        free((yyvsp[-3].text));
+
+        kids[0] = id_leaf;
+        kids[1] = (yyvsp[-1].node);
+        (yyval.node) = make_node("Stmt(var id = expr ;)", 2, kids);
+        add_derivation_step("stmt -> var IDENTIFIER = expr ;");
+    }
+#line 1628 "parser.tab.c"
+    break;
+
+  case 5: /* stmt: IDENTIFIER ASSIGN expr SEMICOLON  */
+#line 263 "parser.y"
+                                     {
+        node_t *id_leaf = NULL;
+        node_t *kids[2];
+
+        char *id_label = (char *)malloc(strlen("id: ") + strlen((yyvsp[-3].text)) + 1);
+        if (id_label != NULL) {
+            sprintf(id_label, "id: %s", (yyvsp[-3].text));
+        }
+        id_leaf = make_node_owned(id_label, 0, NULL);
+        free((yyvsp[-3].text));
+
+        kids[0] = id_leaf;
+        kids[1] = (yyvsp[-1].node);
+        (yyval.node) = make_node("Stmt(id = expr ;)", 2, kids);
+        add_derivation_step("stmt -> IDENTIFIER = expr ;");
+    }
+#line 1649 "parser.tab.c"
+    break;
+
+  case 6: /* stmt: KW_PRINT LPAREN expr RPAREN SEMICOLON  */
+#line 279 "parser.y"
+                                          {
+        node_t *kids[1] = { (yyvsp[-2].node) };
+        (yyval.node) = make_node("Stmt(print(expr);)", 1, kids);
+        add_derivation_step("stmt -> print ( expr ) ;");
+    }
+#line 1659 "parser.tab.c"
+    break;
+
+  case 7: /* expr: expr PLUS term  */
+#line 287 "parser.y"
+                   {
+        node_t *kids[2] = { (yyvsp[-2].node), (yyvsp[0].node) };
+        (yyval.node) = make_node("Expr(+)", 2, kids);
+        add_derivation_step("expr -> expr + term");
+    }
+#line 1669 "parser.tab.c"
+    break;
+
+  case 8: /* expr: expr MINUS term  */
+#line 292 "parser.y"
+                    {
+        node_t *kids[2] = { (yyvsp[-2].node), (yyvsp[0].node) };
+        (yyval.node) = make_node("Expr(-)", 2, kids);
+        add_derivation_step("expr -> expr - term");
+    }
+#line 1679 "parser.tab.c"
+    break;
+
+  case 9: /* expr: term  */
+#line 297 "parser.y"
+         {
+        node_t *kids[1] = { (yyvsp[0].node) };
+        (yyval.node) = make_node("Expr", 1, kids);
+        add_derivation_step("expr -> term");
+    }
+#line 1689 "parser.tab.c"
+    break;
+
+  case 10: /* term: term MUL factor  */
+#line 305 "parser.y"
+                    {
+        node_t *kids[2] = { (yyvsp[-2].node), (yyvsp[0].node) };
+        (yyval.node) = make_node("Term(*)", 2, kids);
+        add_derivation_step("term -> term * factor");
+    }
+#line 1699 "parser.tab.c"
+    break;
+
+  case 11: /* term: term DIV factor  */
+#line 310 "parser.y"
+                    {
+        node_t *kids[2] = { (yyvsp[-2].node), (yyvsp[0].node) };
+        (yyval.node) = make_node("Term(/)", 2, kids);
+        add_derivation_step("term -> term / factor");
+    }
+#line 1709 "parser.tab.c"
+    break;
+
+  case 12: /* term: term MOD factor  */
+#line 315 "parser.y"
+                    {
+        node_t *kids[2] = { (yyvsp[-2].node), (yyvsp[0].node) };
+        (yyval.node) = make_node("Term(%)", 2, kids);
+        add_derivation_step("term -> term % factor");
+    }
+#line 1719 "parser.tab.c"
+    break;
+
+  case 13: /* term: factor  */
+#line 320 "parser.y"
+           {
+        node_t *kids[1] = { (yyvsp[0].node) };
+        (yyval.node) = make_node("Term", 1, kids);
+        add_derivation_step("term -> factor");
+    }
+#line 1729 "parser.tab.c"
+    break;
+
+  case 14: /* factor: LPAREN expr RPAREN  */
+#line 328 "parser.y"
+                       {
+        node_t *kids[1] = { (yyvsp[-1].node) };
+        (yyval.node) = make_node("Factor((expr))", 1, kids);
+        add_derivation_step("factor -> ( expr )");
+    }
+#line 1739 "parser.tab.c"
+    break;
+
+  case 15: /* factor: IDENTIFIER  */
+#line 333 "parser.y"
+               {
+        char *label = (char *)malloc(strlen("id: ") + strlen((yyvsp[0].text)) + 1);
+        if (label != NULL) {
+            sprintf(label, "id: %s", (yyvsp[0].text));
+        }
+        (yyval.node) = make_node_owned(label, 0, NULL);
+        free((yyvsp[0].text));
+        add_derivation_step("factor -> IDENTIFIER");
+    }
+#line 1753 "parser.tab.c"
+    break;
+
+  case 16: /* factor: INT_LITERAL  */
+#line 342 "parser.y"
+                {
+        char *label = (char *)malloc(strlen("int: ") + strlen((yyvsp[0].text)) + 1);
+        if (label != NULL) {
+            sprintf(label, "int: %s", (yyvsp[0].text));
+        }
+        (yyval.node) = make_node_owned(label, 0, NULL);
+        free((yyvsp[0].text));
+        add_derivation_step("factor -> INT_LITERAL");
+    }
+#line 1767 "parser.tab.c"
+    break;
+
+  case 17: /* factor: FLOAT_LITERAL  */
+#line 351 "parser.y"
+                  {
+        char *label = (char *)malloc(strlen("float: ") + strlen((yyvsp[0].text)) + 1);
+        if (label != NULL) {
+            sprintf(label, "float: %s", (yyvsp[0].text));
+        }
+        (yyval.node) = make_node_owned(label, 0, NULL);
+        free((yyvsp[0].text));
+        add_derivation_step("factor -> FLOAT_LITERAL");
+    }
+#line 1781 "parser.tab.c"
+    break;
+
+  case 18: /* factor: STRING_LITERAL  */
+#line 360 "parser.y"
+                   {
+        char *label = (char *)malloc(strlen("string: ") + strlen((yyvsp[0].text)) + 1);
+        if (label != NULL) {
+            sprintf(label, "string: %s", (yyvsp[0].text));
+        }
+        (yyval.node) = make_node_owned(label, 0, NULL);
+        free((yyvsp[0].text));
+        add_derivation_step("factor -> STRING_LITERAL");
+    }
+#line 1795 "parser.tab.c"
+    break;
+
+  case 19: /* factor: BOOL_LITERAL  */
+#line 369 "parser.y"
+                 {
+        char *label = (char *)malloc(strlen("bool: ") + strlen((yyvsp[0].text)) + 1);
+        if (label != NULL) {
+            sprintf(label, "bool: %s", (yyvsp[0].text));
+        }
+        (yyval.node) = make_node_owned(label, 0, NULL);
+        free((yyvsp[0].text));
+        add_derivation_step("factor -> BOOL_LITERAL");
+    }
+#line 1809 "parser.tab.c"
+    break;
+
+
+#line 1813 "parser.tab.c"
 
       default: break;
     }
@@ -1645,15 +2033,35 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 126 "parser.y"
+#line 380 "parser.y"
 
 
 void yyerror(const char *msg) {
-    fprintf(stderr, "parse_error: %s\n", msg);
+    syntax_error_count += 1;
+    fprintf(stderr, "syntax_error: %s\n", msg);
 }
 
 int main(int argc, char **argv) {
+    int parse_result = 0;
+    int lex_errors = 0;
+
     (void)argc;
     (void)argv;
-    return yyparse();
+
+    parse_result = yyparse();
+    lex_errors = lexer_error_count();
+
+    if (parse_result == 0 && syntax_error_count == 0 && lex_errors == 0 && root != NULL) {
+        print_derivation();
+        printf("\nParse tree:\n");
+        print_tree(root, 0);
+    } else {
+        fprintf(stderr, "analysis_failed: lexical_errors=%d, syntax_errors=%d\n", lex_errors, syntax_error_count);
+    }
+
+    free_tree(root);
+    root = NULL;
+    free_derivation();
+
+    return (parse_result == 0 && syntax_error_count == 0 && lex_errors == 0) ? 0 : 1;
 }
